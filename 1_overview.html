@@ -136,18 +136,13 @@
                     <main>
                         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.12.0/dist/katex.min.css" integrity="sha384-AfEj0r4/OFrOo5t7NnNe46zW/tFgW6x/bCJG8FqQCEo3+Aro6EYUG4+cU+KJWu/X" crossorigin="anonymous">
 <h1 id="overview"><a class="header" href="#overview">Overview</a></h1>
-<p>The Polynomial Multiproof (PMP) scheme is a polynomial commitment scheme that allows for efficiently creating/verifying opening proofs for multiple polynomials at multiple points. 
-Notably, opening speed is mostly <em>not dependent on the number of polynomials/points</em> opened to.
-Verification scales with the number of points/polynomials, but remains fast.
-Two methods are provided, which trade opening speed for verification speed. </p>
-<p>For some sample numbers, here are times opening/verifying degree 255 polynomials using BLS12-381<sup class="footnote-reference"><a href="#1">1</a></sup>:</p>
-<table><thead><tr><th></th><th>Method 1</th><th>Method 2</th></tr></thead><tbody>
-<tr><td>Opening time</td><td>12-14ms</td><td>26-28ms</td></tr>
-<tr><td>Verification time</td><td>4-48ms</td><td>5-35ms</td></tr>
-</tbody></table>
-<p><img src="./veri-times.png" alt="Verification Times" /></p>
+<p>The Polynomial Multiproof (PMP) scheme is a polynomial commitment scheme that allows for efficiently creating/verifying opening proofs for multiple polynomials at multiple points. </p>
+<p>Here's why this project is cool: <strong>Opening gets faster the more points we open a polynomial at.</strong></p>
+<p>This is a huge deal for data availability systems, which are bottlenecked by opening time.</p>
+<p>For some sample numbers, here are times opening/verifying degree 32768 - 1 polynomials using BLS12-381<sup class="footnote-reference"><a href="#1">1</a></sup> on a single core of an M1 Macbook Pro:</p>
+<p><img src="./m1cycl_32768.png" alt="Benchmarks" /></p>
 <p>This specification outlines implementation requirements for the polynomial multiproof (PMP) scheme.
-This builds on previous methods such as KZG10<sup class="footnote-reference"><a href="#2">2</a></sup>, and is heavily inspired by BDFG21<sup class="footnote-reference"><a href="#3">3</a></sup>. 
+This builds on previous methods such as KZG10<sup class="footnote-reference"><a href="#2">2</a></sup>, and is derived entirely from BDFG21<sup class="footnote-reference"><a href="#3">3</a></sup>. 
 It should be seen as choosing a special case of BDFG21 which allows for significant optimizations that make the protocol more viable for use in applications like Data Availability.</p>
 <p>The scheme consists of four methods:</p>
 <ol>
@@ -156,6 +151,70 @@ It should be seen as choosing a special case of BDFG21 which allows for signific
 <li><code>M1Open/M2Open</code> which computes a single opening proof that a set of polynomials are equal to specific values at a set of points</li>
 <li><code>M1Verify/M2Verify</code> which verify an opening proof against commitments and evaluations</li>
 </ol>
+<h3 id="api"><a class="header" href="#api">API</a></h3>
+<p>The API is designed around two traits, the first looks roughly like</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// A curve-agnostic trait for a BDFG commitment scheme *without precomputation*
+pub trait PolyMultiProofNoPrecomp&lt;E: Pairing&gt;: Sized {
+    /// The output proof type
+    type Proof: Clone;
+
+    /// Creates a proof of the given polynomials and evals at the given points
+    fn open(
+        &amp;self,
+        transcript: &amp;mut Transcript,
+        evals: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        polys: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        points: &amp;[E::ScalarField],
+    ) -&gt; Result&lt;Self::Proof, Error&gt;;
+
+    /// Verifies a proof against the given set of commitments and points
+    fn verify(
+        &amp;self,
+        transcript: &amp;mut Transcript,
+        commits: &amp;[Commitment&lt;E&gt;],
+        points: &amp;[E::ScalarField],
+        evals: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        proof: &amp;Self::Proof,
+    ) -&gt; Result&lt;bool, Error&gt;;
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>This takes a Merlin transcript for the Fiat-Shamir transform, some points <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7167em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span></span></span></span>, some polynomials <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.8889em;vertical-align:-0.1944em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span></span></span></span> and the evaluations of each polynomial at each point <span class="katex"><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:1.0361em;vertical-align:-0.2861em;"></span><span class="mord"><span class="mord mathnormal" style="margin-right:0.10764em;">f</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:-0.1076em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight">i</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.15em;"><span></span></span></span></span></span></span><span class="mopen">(</span><span class="mord"><span class="mord mathnormal">x</span><span class="msupsub"><span class="vlist-t vlist-t2"><span class="vlist-r"><span class="vlist" style="height:0.3117em;"><span style="top:-2.55em;margin-left:0em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mathnormal mtight" style="margin-right:0.05724em;">j</span></span></span></span><span class="vlist-s">​</span></span><span class="vlist-r"><span class="vlist" style="height:0.2861em;"><span></span></span></span></span></span></span><span class="mclose">)</span></span></span></span>.</p>
+<p>This API is the most flexible, but not the most efficient.</p>
+<p>The second trait is more efficient, but requires knowledge of which points are being opened to beforehand.</p>
+<pre><pre class="playground"><code class="language-rust">
+<span class="boring">#![allow(unused)]
+</span><span class="boring">fn main() {
+</span>/// A curve-agnostic trait for a BDFG commitment scheme *with precomputation*
+pub trait PolyMultiProof&lt;E: Pairing&gt;: Sized {
+    /// The output proof type
+    type Proof: Clone;
+
+    /// Creates a of the given polynomials at the given point set index
+    fn open(
+        &amp;self,
+        transcript: &amp;mut Transcript,
+        evals: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        polys: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        point_set_index: usize,
+    ) -&gt; Result&lt;Self::Proof, Error&gt;;
+
+    /// Verifies a proof against the given set of commitments and points
+    fn verify(
+        &amp;self,
+        transcript: &amp;mut Transcript,
+        commits: &amp;[Commitment&lt;E&gt;],
+        point_set_index: usize,
+        evals: &amp;[impl AsRef&lt;[E::ScalarField]&gt;],
+        proof: &amp;Self::Proof,
+    ) -&gt; Result&lt;bool, Error&gt;;
+}
+<span class="boring">}
+</span></code></pre></pre>
+<p>When creating this object, there will be some way to specify the points, or they will be predetermined by the implementation. The API is largely the same.</p>
 <h3 id="applications-to-data-availability"><a class="header" href="#applications-to-data-availability">Applications to Data Availability</a></h3>
 <p>Data availability systems can benefit greatly from PMP, since polynomial commitment-based DA systems are tremendously constrained by opening time.
 Even with very fast KZG implementations, opening is too slow, and constrains the amount of data which can be processed through the system</p>
